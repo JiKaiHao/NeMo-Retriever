@@ -1899,6 +1899,30 @@ def test_root_ingest_index_mode_hybrid_passes_hybrid_into_vdb_kwargs(monkeypatch
     }
 
 
+def test_root_ingest_index_mode_dense_passes_explicit_dense_into_vdb_kwargs(monkeypatch, tmp_path) -> None:
+    fake_ingestor = _make_fake_ingestor()
+    doc = tmp_path / "a.pdf"
+    doc.write_bytes(b"%PDF-1.4\n")
+
+    monkeypatch.setattr(ingest_execution, "create_ingestor", lambda **_: fake_ingestor)
+    monkeypatch.setattr(ingest_execution, "_count_lancedb_rows", lambda *_, **__: 1)
+
+    result = RUNNER.invoke(
+        cli_main.app,
+        ["ingest", str(doc), "--lancedb-uri", "/tmp/lancedb", "--index-mode", "dense"],
+    )
+
+    assert result.exit_code == 0
+    # The SDK resolves missing modes as ``auto``; dense must stay explicit to avoid a hybrid table.
+    assert fake_ingestor.vdb_upload.call_args.args[0].vdb_kwargs == {
+        "uri": "/tmp/lancedb",
+        "table_name": "nemo-retriever",
+        "overwrite": True,
+        "hybrid": False,
+        "embedding_model_name": "nvidia/nemotron-3-embed-1b",
+    }
+
+
 @pytest.mark.parametrize("flag", ["--hybrid", "--sparse"])
 def test_root_ingest_rejects_deprecated_index_mode_aliases(tmp_path, flag: str) -> None:
     doc = tmp_path / "a.pdf"

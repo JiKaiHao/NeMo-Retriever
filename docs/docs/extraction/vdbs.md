@@ -8,6 +8,7 @@ Use this documentation to learn how [NeMo Retriever Library](overview.md) stores
 - [Keep the embedding model aligned](#lancedb-embedding-model-compatibility)
 - [LanceDB Overview](#why-lancedb)
 - [Upload to LanceDB](#upload-to-lancedb)
+    - [Choose the LanceDB index mode](#lancedb-index-mode)
     - [Direct LanceDB ingest and retrieval](#direct-lancedb-ingest-and-retrieval)
 - [Semantic retrieval](#semantic-retrieval)
 - [Metadata and filtering](#metadata-and-filtering)
@@ -41,11 +42,11 @@ NeMo Retriever Library supports uploading data through `.vdb_upload()` on `creat
 - **Local and batch CLI ingest** (`retriever ingest`, `retriever ingest local`, `retriever ingest batch`) persist embeddings to LanceDB (default URI `lancedb`, table `nemo-retriever`).
 - **Service CLI ingest** (`retriever ingest service`) writes to service-configured storage.
 
-The Python SDK and the local CLI share the same LanceDB default table. Pass an explicit URI and table name at ingest and at query time only when you need a non-default location.
+The Python SDK and the local CLI share the same LanceDB default table and the same default index mode, which creates new tables as hybrid tables. For details, refer to [Choose the LanceDB index mode](#lancedb-index-mode). Pass an explicit URI and table name at ingest and at query time only when you need a non-default location.
 
 For supported modes and target storage, refer to the [Retriever CLI](https://github.com/NVIDIA/NeMo-Retriever/tree/26.08.1/nemo_retriever/docs/cli).
 
-`.vdb_upload()` does not generate embeddings. For dense SDK ingestion, include `.embed()` in the pipeline:
+`.vdb_upload()` does not generate embeddings. For dense or hybrid SDK ingestion, include `.embed()` in the pipeline:
 
 ```python
 from nemo_retriever import create_ingestor
@@ -61,8 +62,8 @@ result = (
 )
 ```
 
-Bare `.vdb_upload()` writes to table `nemo-retriever`. Default `Retriever()`
-queries that table.
+Bare `.vdb_upload()` writes a hybrid table named `nemo-retriever`. Default
+`Retriever()` queries that table.
 
 You can omit `.embed()` if a custom stage provides an embedding in `metadata["embedding"]` or `text_embeddings_1b_v2["embedding"]`. Dense upload fails closed if any searchable row in a nonempty batch is missing an embedding. This includes a mixed batch where other rows have embeddings: the library raises `VdbUploadError`, a `ValueError` subclass, without committing the embedded subset. An extraction that produces no content completes without uploading records. For automatic handling of overlength text before upload, refer to [Text inputs that exceed the model limit](embedding.md#text-input-overflow).
 
@@ -109,6 +110,37 @@ Use `--lancedb-uri` and `--table-name` on the local and batch commands when you 
 `GraphIngestor.vdb_upload()` selects LanceDB when you omit `vdb_op`. `VdbUploadParams.vdb_op` defaults to `"lancedb"`. Passing `vdb_op="lancedb"` is optional explicitness, not a requirement.
 
 For URI, table name, and other parameters, refer to the [Python API guide](nemo-retriever-api-reference.md).
+
+### Choose the LanceDB index mode { #lancedb-index-mode }
+
+The Python SDK and `retriever ingest` use the same default index mode, `auto`. A dense table supports vector search over the embeddings. A hybrid table adds a full-text search (FTS) index on the `text` column, so queries can combine vector and keyword search.
+
+The `auto` mode selects the table mode at ingest time as follows:
+
+- A new table, or a table that ingest overwrites, becomes a hybrid table.
+- An existing table that ingest appends to keeps its current mode. A dense table stays dense, a hybrid table stays hybrid, and a sparse table stays sparse.
+
+For `retriever ingest`, `--index-mode auto` is the default. The `dense`, `hybrid`, and `sparse` values are advanced overrides for experiments or specialized deployments. For details, refer to the [Retriever CLI](https://github.com/NVIDIA/NeMo-Retriever/tree/26.08.1/nemo_retriever/docs/cli).
+
+For `.vdb_upload()` in the `inprocess` and `batch` run modes, `GraphIngestor.ingest()` applies `auto` when `vdb_kwargs` sets neither `hybrid` nor `sparse`. LanceDB overwrites the target table by default (`overwrite=True`), so bare `.vdb_upload()` creates a hybrid table. To append to an existing table, set `"overwrite": False` in `vdb_kwargs`. If ingest cannot determine the mode of the existing table, it raises `ValueError`.
+
+When `vdb_kwargs` sets `hybrid` or `sparse`, ingest passes your value to LanceDB and does not apply `auto`. The following example sets `"hybrid": False` to write a dense-only table:
+
+```python
+from nemo_retriever import create_ingestor
+
+
+result = (
+    create_ingestor(run_mode="inprocess")
+    .files(["document.pdf"])
+    .extract(extract_text=True)
+    .embed()
+    .vdb_upload(vdb_kwargs={"uri": "lancedb", "table_name": "nemo-retriever", "hybrid": False})
+    .ingest()
+)
+```
+
+Hybrid ingest builds the FTS index in addition to the vector index, so ingest does slightly more indexing work.
 
 ### Direct LanceDB ingest and retrieval { #direct-lancedb-ingest-and-retrieval }
 

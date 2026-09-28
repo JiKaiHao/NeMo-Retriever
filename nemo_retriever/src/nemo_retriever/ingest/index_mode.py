@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, cast
+from typing import Any, Literal, Mapping, cast
 
 from nemo_retriever.common.vdb.lancedb_capabilities import inspect_lancedb_table_object
 
@@ -19,6 +19,11 @@ SUPPORTED_INGEST_INDEX_MODES: tuple[RequestedIngestIndexMode, ...] = (
     "hybrid",
     "sparse",
 )
+
+# Mirror the ``LanceDB.__init__`` defaults so ``auto`` inspects the table the writer will open.
+_LANCEDB_DEFAULT_URI = "lancedb"
+_LANCEDB_DEFAULT_TABLE_NAME = "nemo-retriever"
+_LANCEDB_DEFAULT_OVERWRITE = True
 
 
 def validate_requested_index_mode(index_mode: str) -> RequestedIngestIndexMode:
@@ -71,3 +76,35 @@ def inspect_existing_lancedb_mode(uri: str, table_name: str) -> ResolvedIngestIn
             f"Cannot determine physical retrieval capabilities for LanceDB table {table_name!r} at {uri!r}."
         )
     return cast(ResolvedIngestIndexMode, capabilities.retrieval_mode)
+
+
+def lancedb_index_mode_kwargs(mode: ResolvedIngestIndexMode) -> dict[str, bool]:
+    """Return the ``LanceDB`` constructor kwargs that select one resolved mode."""
+    if mode == "sparse":
+        return {"sparse": True}
+    return {"hybrid": mode == "hybrid"}
+
+
+def resolve_lancedb_upload_kwargs(vdb_kwargs: Mapping[str, Any]) -> dict[str, Any]:
+    """Apply the ``auto`` ingest index mode to LanceDB upload kwargs.
+
+    Explicit ``hybrid`` or ``sparse`` kwargs are authoritative and returned
+    unchanged. Otherwise the target table is resolved like ``retriever ingest
+    --index-mode auto``: fresh and overwritten tables become hybrid, and
+    appends preserve the existing table's mode.
+    """
+    kwargs = dict(vdb_kwargs)
+    if "hybrid" in kwargs or "sparse" in kwargs:
+        return kwargs
+
+    overwrite = bool(kwargs.get("overwrite", _LANCEDB_DEFAULT_OVERWRITE))
+    existing_mode = (
+        None
+        if overwrite
+        else inspect_existing_lancedb_mode(
+            str(kwargs.get("uri") or _LANCEDB_DEFAULT_URI),
+            str(kwargs.get("table_name") or _LANCEDB_DEFAULT_TABLE_NAME),
+        )
+    )
+    mode = resolve_ingest_index_mode("auto", overwrite=overwrite, existing_mode=existing_mode)
+    return {**kwargs, **lancedb_index_mode_kwargs(mode)}
