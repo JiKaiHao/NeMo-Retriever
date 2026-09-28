@@ -122,9 +122,9 @@ The `auto` mode selects the table mode at ingest time as follows:
 
 For `retriever ingest`, `--index-mode auto` is the default. The `dense`, `hybrid`, and `sparse` values are advanced overrides for experiments or specialized deployments. For details, refer to the [Retriever CLI](https://github.com/NVIDIA/NeMo-Retriever/tree/26.08.1/nemo_retriever/docs/cli).
 
-For `.vdb_upload()` in the `inprocess` and `batch` run modes, `GraphIngestor.ingest()` applies `auto` when `vdb_kwargs` sets neither `hybrid` nor `sparse`. LanceDB overwrites the target table by default (`overwrite=True`), so bare `.vdb_upload()` creates a hybrid table. To append to an existing table, set `"overwrite": False` in `vdb_kwargs`. If ingest cannot determine the mode of the existing table, it raises `ValueError`.
+In the `inprocess` and `batch` run modes, `.vdb_upload()` applies `auto` when `vdb_kwargs` sets neither `hybrid` nor `sparse`. LanceDB overwrites the target table by default (`overwrite=True`), so bare `.vdb_upload()` creates a hybrid table. To append to an existing table, set `"overwrite": False` in `vdb_kwargs`. If `.vdb_upload()` cannot determine the mode of the existing table, it raises `ValueError`.
 
-When `vdb_kwargs` sets `hybrid` or `sparse`, ingest passes your value to LanceDB and does not apply `auto`. The following example sets `"hybrid": False` to write a dense-only table:
+When `vdb_kwargs` sets `hybrid` or `sparse`, `.vdb_upload()` passes your value to LanceDB and does not apply `auto`. The following example sets `"hybrid": False` to write a dense-only table:
 
 ```python
 from nemo_retriever import create_ingestor

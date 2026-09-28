@@ -211,8 +211,7 @@ overrides for experiments or specialized deployments.
 
 Chunks land at `./lancedb/nemo-retriever`, which matches the storage settings
 used in [Run a recall query](#run-a-recall-query) below. Python
-`.vdb_upload()` and default `Retriever()` use the same table, and
-`.vdb_upload()` applies the same `auto` index mode. With the
+`.vdb_upload()` and default `Retriever()` use the same table. With the
 `[local]` extra installed (refer to the setup steps above), defaults point at
 local-GPU extraction and embedding.
 

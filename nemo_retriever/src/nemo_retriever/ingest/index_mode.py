@@ -20,11 +20,6 @@ SUPPORTED_INGEST_INDEX_MODES: tuple[RequestedIngestIndexMode, ...] = (
     "sparse",
 )
 
-# Mirror the ``LanceDB.__init__`` defaults so ``auto`` inspects the table the writer will open.
-_LANCEDB_DEFAULT_URI = "lancedb"
-_LANCEDB_DEFAULT_TABLE_NAME = "nemo-retriever"
-_LANCEDB_DEFAULT_OVERWRITE = True
-
 
 def validate_requested_index_mode(index_mode: str) -> RequestedIngestIndexMode:
     """Normalize and validate the public ingest index-mode vocabulary."""
@@ -78,33 +73,21 @@ def inspect_existing_lancedb_mode(uri: str, table_name: str) -> ResolvedIngestIn
     return cast(ResolvedIngestIndexMode, capabilities.retrieval_mode)
 
 
-def lancedb_index_mode_kwargs(mode: ResolvedIngestIndexMode) -> dict[str, bool]:
-    """Return the ``LanceDB`` constructor kwargs that select one resolved mode."""
-    if mode == "sparse":
-        return {"sparse": True}
-    return {"hybrid": mode == "hybrid"}
-
-
 def resolve_lancedb_upload_kwargs(vdb_kwargs: Mapping[str, Any]) -> dict[str, Any]:
-    """Apply the ``auto`` ingest index mode to LanceDB upload kwargs.
-
-    Explicit ``hybrid`` or ``sparse`` kwargs are authoritative and returned
-    unchanged. Otherwise the target table is resolved like ``retriever ingest
-    --index-mode auto``: fresh and overwritten tables become hybrid, and
-    appends preserve the existing table's mode.
-    """
+    """Apply ``auto`` to LanceDB upload kwargs that set neither ``hybrid`` nor ``sparse``."""
     kwargs = dict(vdb_kwargs)
     if "hybrid" in kwargs or "sparse" in kwargs:
         return kwargs
-
-    overwrite = bool(kwargs.get("overwrite", _LANCEDB_DEFAULT_OVERWRITE))
+    # Fall back to the LanceDB constructor defaults for the target table.
+    overwrite = bool(kwargs.get("overwrite", True))
     existing_mode = (
         None
         if overwrite
         else inspect_existing_lancedb_mode(
-            str(kwargs.get("uri") or _LANCEDB_DEFAULT_URI),
-            str(kwargs.get("table_name") or _LANCEDB_DEFAULT_TABLE_NAME),
+            str(kwargs.get("uri") or "lancedb"), str(kwargs.get("table_name") or "nemo-retriever")
         )
     )
     mode = resolve_ingest_index_mode("auto", overwrite=overwrite, existing_mode=existing_mode)
-    return {**kwargs, **lancedb_index_mode_kwargs(mode)}
+    if mode == "sparse":
+        return {**kwargs, "sparse": True}
+    return {**kwargs, "hybrid": mode == "hybrid"}

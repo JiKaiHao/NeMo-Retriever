@@ -77,7 +77,7 @@ def _run_graph_ingest_with_result(ingestor: GraphIngestor, result, monkeypatch, 
         lambda: SimpleNamespace(extraction_mode="pdf"),
     )
 
-    def _execute_single_graph(effective_extraction, *, dedup_params, vdb_upload_params, post_extract_order):
+    def _execute_single_graph(effective_extraction, *, dedup_params, post_extract_order):
         assert effective_extraction.extraction_mode == "pdf"
         assert dedup_params is ingestor._dedup_params
         assert isinstance(post_extract_order, tuple)
@@ -377,7 +377,7 @@ def test_caption_auto_dedup_does_not_mutate_repeated_ingest_state(monkeypatch: p
         lambda: SimpleNamespace(extraction_mode="pdf"),
     )
 
-    def _execute_single_graph(effective_extraction, *, dedup_params, vdb_upload_params, post_extract_order):
+    def _execute_single_graph(effective_extraction, *, dedup_params, post_extract_order):
         assert effective_extraction.extraction_mode == "pdf"
         calls.append((dedup_params, post_extract_order))
         return pd.DataFrame()
@@ -408,7 +408,7 @@ def test_image_only_caption_does_not_enable_or_persist_dedup(monkeypatch: pytest
         lambda: SimpleNamespace(extraction_mode="image"),
     )
 
-    def _execute_single_graph(effective_extraction, *, dedup_params, vdb_upload_params, post_extract_order):
+    def _execute_single_graph(effective_extraction, *, dedup_params, post_extract_order):
         assert effective_extraction.extraction_mode == "image"
         calls.append((dedup_params, post_extract_order))
         return pd.DataFrame()
@@ -434,7 +434,7 @@ def test_explicit_disabled_dedup_preserves_sdk_state(monkeypatch: pytest.MonkeyP
         lambda: SimpleNamespace(extraction_mode="pdf"),
     )
 
-    def _execute_single_graph(effective_extraction, *, dedup_params, vdb_upload_params, post_extract_order):
+    def _execute_single_graph(effective_extraction, *, dedup_params, post_extract_order):
         assert effective_extraction.extraction_mode == "pdf"
         calls.append((dedup_params, post_extract_order))
         return pd.DataFrame()
@@ -448,61 +448,14 @@ def test_explicit_disabled_dedup_preserves_sdk_state(monkeypatch: pytest.MonkeyP
     assert ingestor._stage_order == configured_stage_order == ["extract", "dedup", "caption"]
 
 
-def _capture_vdb_upload_params(ingestor: GraphIngestor, monkeypatch: pytest.MonkeyPatch) -> list:
-    calls: list = []
-    monkeypatch.setattr(ingestor, "_plan_default_extraction_branches", lambda: None)
-    monkeypatch.setattr(
-        ingestor,
-        "_resolve_effective_extraction_inputs",
-        lambda: SimpleNamespace(extraction_mode="pdf"),
-    )
-
-    def _execute_single_graph(effective_extraction, *, dedup_params, vdb_upload_params, post_extract_order):
-        calls.append(vdb_upload_params)
-        return pd.DataFrame()
-
-    monkeypatch.setattr(ingestor, "_execute_single_graph", _execute_single_graph)
-    return calls
-
-
-@pytest.mark.parametrize("run_mode", ["inprocess", "batch"])
-def test_vdb_upload_default_resolves_hybrid_without_mutating_sdk_state(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, run_mode: str
-) -> None:
+def test_vdb_upload_defaults_lancedb_to_auto_index_mode(tmp_path: Path) -> None:
     uri = str(tmp_path / "lancedb")
-    ingestor = GraphIngestor(run_mode=run_mode).files(["document.pdf"]).vdb_upload(vdb_kwargs={"uri": uri})
-    calls = _capture_vdb_upload_params(ingestor, monkeypatch)
 
-    ingestor.ingest()
+    default = GraphIngestor(run_mode="batch").vdb_upload(vdb_kwargs={"uri": uri})
+    explicit = GraphIngestor(run_mode="batch").vdb_upload(vdb_kwargs={"uri": uri, "hybrid": False})
 
-    assert [params.vdb_kwargs for params in calls] == [{"uri": uri, "hybrid": True}]
-    assert ingestor._vdb_upload_params.vdb_kwargs == {"uri": uri}
-
-
-def test_vdb_upload_default_append_preserves_existing_dense_table(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    import lancedb
-
-    uri = str(tmp_path / "lancedb")
-    lancedb.connect(uri).create_table("docs", data=[{"vector": [0.1, 0.2], "text": "alpha", "id": "a"}])
-    vdb_kwargs = {"uri": uri, "table_name": "docs", "overwrite": False}
-    ingestor = GraphIngestor(run_mode="batch").files(["document.pdf"]).vdb_upload(vdb_kwargs=vdb_kwargs)
-    calls = _capture_vdb_upload_params(ingestor, monkeypatch)
-
-    ingestor.ingest()
-
-    assert [params.vdb_kwargs for params in calls] == [{**vdb_kwargs, "hybrid": False}]
-
-
-def test_vdb_upload_explicit_dense_is_authoritative(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    vdb_kwargs = {"uri": str(tmp_path / "lancedb"), "hybrid": False}
-    ingestor = GraphIngestor(run_mode="batch").files(["document.pdf"]).vdb_upload(vdb_kwargs=vdb_kwargs)
-    calls = _capture_vdb_upload_params(ingestor, monkeypatch)
-
-    ingestor.ingest()
-
-    assert [params.vdb_kwargs for params in calls] == [vdb_kwargs]
+    assert default._vdb_upload_params.vdb_kwargs == {"uri": uri, "hybrid": True}
+    assert explicit._vdb_upload_params.vdb_kwargs == {"uri": uri, "hybrid": False}
 
 
 def test_extract_unified_defaults() -> None:

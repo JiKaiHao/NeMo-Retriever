@@ -796,13 +796,11 @@ class GraphIngestor(ingestor):
         always appended from ``_vdb_upload_params`` in
         :func:`~nemo_retriever.graph.ingestor_runtime._append_ordered_transform_stages`.
         Plan builders that round-trip sinks use :meth:`~nemo_retriever.ingest_plans.BaseIngestPlan.record_sink`.
-
-        LanceDB ``vdb_kwargs`` without ``hybrid`` or ``sparse`` follow
-        ``retriever ingest --index-mode auto`` when :meth:`ingest` runs: new and
-        overwritten tables are hybrid, and appends keep the existing table mode.
-        Pass ``hybrid=False`` for a dense-only table.
         """
-        self._vdb_upload_params = _coerce(params, kwargs, default_factory=VdbUploadParams)
+        params = _coerce(params, kwargs, default_factory=VdbUploadParams)
+        if getattr(params, "vdb_op", None) == "lancedb":
+            params = params.model_copy(update={"vdb_kwargs": resolve_lancedb_upload_kwargs(params.vdb_kwargs)})
+        self._vdb_upload_params = params
         return self
 
     def webhook(self, params: Optional[WebhookParams] = None, **kwargs: Any) -> "GraphIngestor":
@@ -886,13 +884,11 @@ class GraphIngestor(ingestor):
             effective_stage_order.insert(idx, "dedup")
 
         post_extract_order = tuple(s for s in effective_stage_order if s != "extract")
-        effective_vdb_upload_params = self._resolve_effective_vdb_upload_params()
 
         if execute_branches:
             result = self._execute_extraction_branches(
                 default_branches,
                 dedup_params=effective_dedup_params,
-                vdb_upload_params=effective_vdb_upload_params,
                 post_extract_order=post_extract_order,
             )
         else:
@@ -901,7 +897,6 @@ class GraphIngestor(ingestor):
             result = self._execute_single_graph(
                 single_effective,
                 dedup_params=effective_dedup_params,
-                vdb_upload_params=effective_vdb_upload_params,
                 post_extract_order=post_extract_order,
             )
 
@@ -912,20 +907,17 @@ class GraphIngestor(ingestor):
         effective_extraction: ResolvedExtractionInputs,
         *,
         dedup_params: DedupParams | None,
-        vdb_upload_params: VdbUploadParams | None,
         post_extract_order: tuple[str, ...],
     ) -> Any:
         if self._run_mode == "batch":
             return self._execute_single_graph_batch(
                 effective_extraction,
                 dedup_params=dedup_params,
-                vdb_upload_params=vdb_upload_params,
                 post_extract_order=post_extract_order,
             )
         return self._execute_single_graph_inprocess(
             effective_extraction,
             dedup_params=dedup_params,
-            vdb_upload_params=vdb_upload_params,
             post_extract_order=post_extract_order,
         )
 
@@ -934,7 +926,6 @@ class GraphIngestor(ingestor):
         effective_extraction: ResolvedExtractionInputs,
         *,
         dedup_params: DedupParams | None,
-        vdb_upload_params: VdbUploadParams | None,
         post_extract_order: tuple[str, ...],
     ) -> Any:
         ray, cluster_resources = self._ensure_batch_runtime()
@@ -953,7 +944,7 @@ class GraphIngestor(ingestor):
             caption_params=self._caption_params,
             dedup_params=dedup_params,
             store_params=self._store_params,
-            vdb_upload_params=vdb_upload_params,
+            vdb_upload_params=self._vdb_upload_params,
             webhook_params=self._webhook_params,
             stage_order=post_extract_order,
         )
@@ -995,7 +986,6 @@ class GraphIngestor(ingestor):
         effective_extraction: ResolvedExtractionInputs,
         *,
         dedup_params: DedupParams | None,
-        vdb_upload_params: VdbUploadParams | None,
         post_extract_order: tuple[str, ...],
     ) -> Any:
         graph = build_graph(
@@ -1013,7 +1003,7 @@ class GraphIngestor(ingestor):
             caption_params=self._caption_params,
             dedup_params=dedup_params,
             store_params=self._store_params,
-            vdb_upload_params=vdb_upload_params,
+            vdb_upload_params=self._vdb_upload_params,
             webhook_params=self._webhook_params,
             stage_order=post_extract_order,
         )
@@ -1033,7 +1023,6 @@ class GraphIngestor(ingestor):
         branches: tuple[ExtractionBranchPlan, ...],
         *,
         dedup_params: DedupParams | None,
-        vdb_upload_params: VdbUploadParams | None,
         post_extract_order: tuple[str, ...],
     ) -> Any:
         result = ExtractionBranchExecutor(
@@ -1055,7 +1044,7 @@ class GraphIngestor(ingestor):
             caption_params=self._caption_params,
             dedup_params=dedup_params,
             store_params=self._store_params,
-            vdb_upload_params=vdb_upload_params,
+            vdb_upload_params=self._vdb_upload_params,
             webhook_params=self._webhook_params,
             post_extract_order=post_extract_order,
             ray_address=self._ray_address,
@@ -1069,14 +1058,6 @@ class GraphIngestor(ingestor):
         ).execute()
         self._rd_dataset = result if self._run_mode == "batch" else None
         return result
-
-    def _resolve_effective_vdb_upload_params(self) -> Any:
-        """Resolve LanceDB ``auto`` index mode against the table as it exists now."""
-        params = self._vdb_upload_params
-        if getattr(params, "vdb_op", None) != "lancedb":
-            return params
-        vdb_kwargs = resolve_lancedb_upload_kwargs(params.vdb_kwargs)
-        return params.model_copy(update={"vdb_kwargs": vdb_kwargs})
 
     def _ensure_batch_runtime(self) -> tuple[Any, Any]:
         ray = ensure_local_ray_runtime(self._ray_address, log_to_driver=self._ray_log_to_driver)
