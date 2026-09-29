@@ -140,3 +140,25 @@ def resolve_input_files(input_path: Path, input_type: str) -> list[Path]:
         else INPUT_TYPE_EXTENSIONS.get(input_type, INPUT_TYPE_EXTENSIONS["pdf"])
     )
     return sorted(match for match in path.rglob("*") if match.is_file() and match.suffix.lower() in allowed_extensions)
+
+
+def expand_input_directories(documents: Iterable[InputPath], *, input_type: str = "auto") -> list[InputPath]:
+    """Replace directory inputs with their supported files, leaving other inputs unchanged.
+
+    Raises
+    ------
+    FileNotFoundError
+        If a directory contains no supported input files.
+    """
+    expanded: list[InputPath] = []
+    for document in documents:
+        path = Path(fspath(document)).expanduser()
+        # Only bare directories expand; skip the stat for supported files and globs.
+        if path.suffix.lower() in AUTO_INPUT_EXTENSIONS or _is_explicit_glob_path(document) or not path.is_dir():
+            expanded.append(document)
+            continue
+        directory_files = resolve_input_files(path, input_type)
+        if not directory_files:
+            raise FileNotFoundError(f"No supported ingest files found under directory: {path}")
+        expanded.extend(str(file) for file in directory_files)
+    return expanded
