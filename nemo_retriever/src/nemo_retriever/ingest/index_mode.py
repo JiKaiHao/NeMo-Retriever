@@ -13,6 +13,8 @@ from nemo_retriever.common.vdb.lancedb_capabilities import (
     _table_schema,
     inspect_lancedb_table_object,
 )
+from nemo_retriever.models import NEMOTRON_3_EMBED_MODEL, resolve_embed_model
+from nemo_retriever.models.embed_model_spec import resolve_embed_model_revision
 
 RequestedIngestIndexMode = Literal["auto", "dense", "hybrid", "sparse"]
 ResolvedIngestIndexMode = Literal["dense", "hybrid", "sparse"]
@@ -122,12 +124,32 @@ def resolve_lancedb_upload_kwargs(vdb_kwargs: Mapping[str, Any]) -> dict[str, An
     return {**kwargs, **lancedb_index_mode_kwargs(mode)}
 
 
-def resolve_vdb_upload_kwargs(vdb_upload_params: Any) -> dict[str, Any]:
+def _embedding_model_kwargs(embed_params: Any) -> dict[str, Any]:
+    """Record the embed stage's model on the table, as ``retriever ingest`` does."""
+    remote = str(embed_params.embed_invoke_url or embed_params.embedding_endpoint or "").strip()
+    if not remote and embed_params.embed_model_name not in (None, embed_params.model_name):
+        # A local actor would use embed_model_name, a CPU-only fallback model_name; don't guess.
+        return {}
+    # Remote and CPU-fallback actors embed with model_name, and a local actor agrees here.
+    model_name = resolve_embed_model(embed_params.model_name)
+    kwargs: dict[str, Any] = {"embedding_model_name": model_name}
+    if model_name != NEMOTRON_3_EMBED_MODEL and not remote:
+        revision = resolve_embed_model_revision(model_name, embed_params.embed_model_revision)
+        if revision:
+            kwargs["embedding_model_revision"] = revision
+    return kwargs
+
+
+def resolve_vdb_upload_kwargs(vdb_upload_params: Any, embed_params: Any = None) -> dict[str, Any]:
     """Return ``IngestVdbOperator`` kwargs with the LanceDB ingest policy applied.
 
-    LanceDB uploads resolve the ``auto`` index mode; other VDBs pass through unchanged.
+    LanceDB uploads resolve the ``auto`` index mode and, after an ``.embed()`` stage,
+    record its model as ``retriever ingest`` does. Other VDBs pass through unchanged.
     """
     vdb_kwargs = vdb_upload_params.to_ingest_operator_kwargs()
     if vdb_upload_params.vdb_op != "lancedb":
         return vdb_kwargs
-    return resolve_lancedb_upload_kwargs(vdb_kwargs)
+    vdb_kwargs = resolve_lancedb_upload_kwargs(vdb_kwargs)
+    if embed_params is None or vdb_kwargs.get("sparse") or "embedding_model_name" in vdb_kwargs:
+        return vdb_kwargs
+    return {**_embedding_model_kwargs(embed_params), **vdb_kwargs}
