@@ -74,7 +74,25 @@ def inspect_existing_lancedb_mode(uri: str, table_name: str) -> ResolvedIngestIn
 
 
 def resolve_lancedb_upload_kwargs(vdb_kwargs: Mapping[str, Any]) -> dict[str, Any]:
-    """Apply ``auto`` to LanceDB upload kwargs that set neither ``hybrid`` nor ``sparse``."""
+    """Apply the ``auto`` ingest index mode to LanceDB upload kwargs.
+
+    Parameters
+    ----------
+    vdb_kwargs
+        ``LanceDB`` constructor kwargs from ``VdbUploadParams``. An explicit
+        ``hybrid`` or ``sparse`` key is authoritative and returned unchanged.
+
+    Returns
+    -------
+    dict[str, Any]
+        A copy of ``vdb_kwargs`` with the resolved mode: ``hybrid=True`` for new
+        or overwritten tables, and the existing table's mode on append.
+
+    Raises
+    ------
+    ValueError
+        If appending to an existing table whose retrieval mode cannot be determined.
+    """
     kwargs = dict(vdb_kwargs)
     if "hybrid" in kwargs or "sparse" in kwargs:
         return kwargs

@@ -49,7 +49,6 @@ from nemo_retriever.ingestor.manifest import (
     resolve_branch_extraction_inputs,
 )
 from nemo_retriever.ingestor.plans import dedup_params_enabled, resolve_effective_dedup_params
-from nemo_retriever.ingest.index_mode import resolve_lancedb_upload_kwargs
 from nemo_retriever.ingestor import ingestor
 from nemo_retriever.common.inline_text import (
     inline_text_source_id,
@@ -797,10 +796,7 @@ class GraphIngestor(ingestor):
         :func:`~nemo_retriever.graph.ingestor_runtime._append_ordered_transform_stages`.
         Plan builders that round-trip sinks use :meth:`~nemo_retriever.ingest_plans.BaseIngestPlan.record_sink`.
         """
-        params = _coerce(params, kwargs, default_factory=VdbUploadParams)
-        if getattr(params, "vdb_op", None) == "lancedb":
-            params = params.model_copy(update={"vdb_kwargs": resolve_lancedb_upload_kwargs(params.vdb_kwargs)})
-        self._vdb_upload_params = params
+        self._vdb_upload_params = _coerce(params, kwargs, default_factory=VdbUploadParams)
         return self
 
     def webhook(self, params: Optional[WebhookParams] = None, **kwargs: Any) -> "GraphIngestor":

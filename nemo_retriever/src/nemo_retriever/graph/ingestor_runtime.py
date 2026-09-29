@@ -35,6 +35,7 @@ from nemo_retriever.operators.extract.pdf.extract import PDFExtractionActor, bui
 from nemo_retriever.operators.extract.pdf.split import PDFSplitActor
 from nemo_retriever.common.params import TextChunkParams, VdbUploadParams, resolve_split_params
 from nemo_retriever.operators.vdb import IngestVdbOperator
+from nemo_retriever.ingest.index_mode import resolve_lancedb_upload_kwargs
 from nemo_retriever.operators.extract.txt.ray_data import TextChunkActor, TxtSplitActor
 from nemo_retriever.common.modality.convert.to_pdf import DocToPdfConversionActor
 from nemo_retriever.ingestor.plans import IngestExecutionPlan, dedup_params_enabled
@@ -608,10 +609,10 @@ def _append_ordered_transform_stages(
             )
 
     if vdb_upload_params is not None:
-        graph = graph >> IngestVdbOperator(
-            vdb_op=vdb_upload_params.vdb_op,
-            vdb_kwargs=vdb_upload_params.to_ingest_operator_kwargs(),
-        )
+        vdb_kwargs = vdb_upload_params.to_ingest_operator_kwargs()
+        if vdb_upload_params.vdb_op == "lancedb":
+            vdb_kwargs = resolve_lancedb_upload_kwargs(vdb_kwargs)
+        graph = graph >> IngestVdbOperator(vdb_op=vdb_upload_params.vdb_op, vdb_kwargs=vdb_kwargs)
 
     if webhook_params is not None and getattr(webhook_params, "endpoint_url", None):
         graph = graph >> WebhookNotifyOperator(params=webhook_params)
