@@ -36,6 +36,8 @@ from nemo_retriever.operators.extract.pdf.split import PDFSplitActor
 from nemo_retriever.common.params import TextChunkParams, VdbUploadParams, resolve_split_params
 from nemo_retriever.operators.vdb import IngestVdbOperator
 from nemo_retriever.ingest.index_mode import resolve_lancedb_upload_kwargs
+from nemo_retriever.models import NEMOTRON_3_EMBED_MODEL, resolve_embed_model
+from nemo_retriever.models.embed_model_spec import resolve_embed_model_revision
 from nemo_retriever.operators.extract.txt.ray_data import TextChunkActor, TxtSplitActor
 from nemo_retriever.common.modality.convert.to_pdf import DocToPdfConversionActor
 from nemo_retriever.ingestor.plans import IngestExecutionPlan, dedup_params_enabled
@@ -539,6 +541,18 @@ def _maybe_append_chunk_actor(graph: Graph, split_config: dict[str, Any], key: s
     return graph
 
 
+def _lancedb_embedding_model_kwargs(embed_params: Any) -> dict[str, str]:
+    """Record the embed stage's model on the table, as ``retriever ingest`` does."""
+    model_name = resolve_embed_model(embed_params.embed_model_name or embed_params.model_name)
+    kwargs = {"embedding_model_name": model_name}
+    remote = str(embed_params.embed_invoke_url or embed_params.embedding_endpoint or "").strip()
+    if model_name != NEMOTRON_3_EMBED_MODEL and not remote:
+        revision = resolve_embed_model_revision(model_name, embed_params.embed_model_revision)
+        if revision:
+            kwargs["embedding_model_revision"] = revision
+    return kwargs
+
+
 def _append_ordered_transform_stages(
     graph: Graph,
     *,
@@ -612,6 +626,8 @@ def _append_ordered_transform_stages(
         vdb_kwargs = vdb_upload_params.to_ingest_operator_kwargs()
         if vdb_upload_params.vdb_op == "lancedb":
             vdb_kwargs = resolve_lancedb_upload_kwargs(vdb_kwargs)
+            if embed_params is not None and not vdb_kwargs.get("sparse") and "embedding_model_name" not in vdb_kwargs:
+                vdb_kwargs.update(_lancedb_embedding_model_kwargs(embed_params))
         graph = graph >> IngestVdbOperator(vdb_op=vdb_upload_params.vdb_op, vdb_kwargs=vdb_kwargs)
 
     if webhook_params is not None and getattr(webhook_params, "endpoint_url", None):

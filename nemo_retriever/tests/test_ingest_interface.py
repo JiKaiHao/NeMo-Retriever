@@ -450,12 +450,22 @@ def test_explicit_disabled_dedup_preserves_sdk_state(monkeypatch: pytest.MonkeyP
     assert ingestor._stage_order == configured_stage_order == ["extract", "dedup", "caption"]
 
 
-def _lancedb_sink_hybrid(vdb_upload_params: VdbUploadParams) -> bool:
-    graph = build_graph(extraction_mode="pdf", extract_params=ExtractParams(), vdb_upload_params=vdb_upload_params)
+def _lancedb_sink(vdb_upload_params: VdbUploadParams, embed_params: EmbedParams | None = None):
+    graph = build_graph(
+        extraction_mode="pdf",
+        extract_params=ExtractParams(),
+        embed_params=embed_params,
+        vdb_upload_params=vdb_upload_params,
+        stage_order=("embed",) if embed_params is not None else (),
+    )
     node = graph.roots[0]
     while not isinstance(node.operator, IngestVdbOperator):
         node = node.children[0]
-    return node.operator._vdb.hybrid
+    return node.operator._vdb
+
+
+def _lancedb_sink_hybrid(vdb_upload_params: VdbUploadParams) -> bool:
+    return _lancedb_sink(vdb_upload_params).hybrid
 
 
 def test_lancedb_sink_resolves_auto_index_mode_when_graph_is_built(tmp_path: Path) -> None:
@@ -469,6 +479,36 @@ def test_lancedb_sink_resolves_auto_index_mode_when_graph_is_built(tmp_path: Pat
     lancedb.connect(str(tmp_path)).create_table("docs", data=[{"vector": [0.1, 0.2], "text": "alpha"}])
     assert _lancedb_sink_hybrid(append) is False
     assert append.vdb_kwargs == {"uri": str(tmp_path), "table_name": "docs", "overwrite": False}
+
+
+@pytest.mark.parametrize(
+    ("embed_params", "vdb_kwargs", "expected_model", "expected_revision"),
+    [
+        (EmbedParams(), {}, "nvidia/nemotron-3-embed-1b", None),
+        (
+            EmbedParams(model_name="nvidia/llama-nemotron-embed-1b-v2", embed_model_revision="abc123"),
+            {},
+            "nvidia/llama-nemotron-embed-1b-v2",
+            "abc123",
+        ),
+        (
+            EmbedParams(model_name="nvidia/llama-nemotron-embed-1b-v2", embed_invoke_url="http://embed:8000/v1"),
+            {},
+            "nvidia/llama-nemotron-embed-1b-v2",
+            None,
+        ),
+        (EmbedParams(), {"embedding_model_name": "custom/model"}, "custom/model", None),
+        (None, {}, None, None),
+        (EmbedParams(), {"sparse": True}, None, None),
+    ],
+)
+def test_lancedb_sink_records_embed_stage_model(
+    tmp_path: Path, embed_params, vdb_kwargs, expected_model, expected_revision
+) -> None:
+    vdb = _lancedb_sink(VdbUploadParams(vdb_kwargs={"uri": str(tmp_path), **vdb_kwargs}), embed_params)
+
+    assert vdb.embedding_model_name == expected_model
+    assert vdb.embedding_model_revision == expected_revision
 
 
 def test_extract_unified_defaults() -> None:
