@@ -26,7 +26,9 @@ from nemo_retriever.common.params import (
     NO_API_KEY,
     RemoteRetryParams,
     TextChunkParams,
+    VdbUploadParams,
 )
+from nemo_retriever.operators.vdb import IngestVdbOperator
 
 
 class _InlineTextTokenizer:
@@ -446,6 +448,27 @@ def test_explicit_disabled_dedup_preserves_sdk_state(monkeypatch: pytest.MonkeyP
     assert calls == [(configured_dedup, ("dedup", "caption"))]
     assert ingestor._dedup_params is configured_dedup
     assert ingestor._stage_order == configured_stage_order == ["extract", "dedup", "caption"]
+
+
+def _lancedb_sink_hybrid(vdb_upload_params: VdbUploadParams) -> bool:
+    graph = build_graph(extraction_mode="pdf", extract_params=ExtractParams(), vdb_upload_params=vdb_upload_params)
+    node = graph.roots[0]
+    while not isinstance(node.operator, IngestVdbOperator):
+        node = node.children[0]
+    return node.operator._vdb.hybrid
+
+
+def test_lancedb_sink_resolves_auto_index_mode_when_graph_is_built(tmp_path: Path) -> None:
+    import lancedb
+
+    append = VdbUploadParams(vdb_kwargs={"uri": str(tmp_path), "table_name": "docs", "overwrite": False})
+
+    assert _lancedb_sink_hybrid(VdbUploadParams(vdb_kwargs={"uri": str(tmp_path)})) is True
+    assert _lancedb_sink_hybrid(VdbUploadParams(vdb_kwargs={"uri": str(tmp_path), "hybrid": False})) is False
+    assert _lancedb_sink_hybrid(append) is True
+    lancedb.connect(str(tmp_path)).create_table("docs", data=[{"vector": [0.1, 0.2], "text": "alpha"}])
+    assert _lancedb_sink_hybrid(append) is False
+    assert append.vdb_kwargs == {"uri": str(tmp_path), "table_name": "docs", "overwrite": False}
 
 
 def test_extract_unified_defaults() -> None:

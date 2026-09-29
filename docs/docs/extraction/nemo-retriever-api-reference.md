@@ -326,6 +326,8 @@ service = create_ingestor(run_mode="service", base_url="http://localhost:7670")
 
 `GraphIngestor` methods include `extract_html()`, `extract_audio()`, `extract_video()`, `get_error_rows()`, and `get_dataset()`. `get_error_rows()` filters rows that contain stage error payloads from a pandas DataFrame or Ray Dataset. If you omit `dataset`, it uses the dataset retained from the last `ingest()` call. `get_dataset()` returns that retained dataset.
 
+When `vdb_upload()` targets LanceDB and `vdb_kwargs` sets neither `hybrid` nor `sparse`, it applies the same `auto` index mode as `retriever ingest`. New and overwritten tables become hybrid, and appends keep the existing table mode. For details and the dense-only override, refer to [Choose the LanceDB index mode](vdbs.md#lancedb-index-mode).
+
 ::: nemo_retriever.ingestor.graph_ingestor.GraphIngestor
     options:
       heading_level: 4
