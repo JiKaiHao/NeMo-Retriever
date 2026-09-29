@@ -83,7 +83,7 @@ Use the following procedure to run the NIM on your own infrastructure. Self-host
 
 3. After the services are running, interact with the pipeline from Python (refer to the [Python API guide](nemo-retriever-api-reference.md) for parameter details).
 
-    - In `batch` mode, pass the in-cluster Parakeet gRPC endpoint through `ASRParams.audio_endpoints`. Use `audio:50051` from your Helm release. Graph ingest does not read the Helm service endpoint.
+    - In `batch` mode, pass the in-cluster Parakeet gRPC endpoint through `ASRParams.audio_endpoints`. Use `audio:50051` from your Helm release. Graph ingest does not read the Helm service endpoint. If you omit `asr_params`, `.extract_audio()` and `.extract_video()` read the endpoint from the `AUDIO_GRPC_ENDPOINT` environment variable, as `retriever ingest` does. They also use the same audio chunk size as `retriever ingest`, and `.extract_video()` samples frames at 0.5 frames per second.
 
     ```python
     from nemo_retriever import create_ingestor

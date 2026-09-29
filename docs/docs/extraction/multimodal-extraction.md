@@ -110,7 +110,7 @@ Charts and infographic regions are classified with other page layout elements (t
     - Chart- and infographic-filtered retrieval (for example, queries scoped to figure or chart content) returns no hits.
     - Chart-heavy and infographic-heavy pages are typically emitted as `Picture` or other non-chart modalities.
 
-    For chart and infographic detection and modality-specific retrieval, use the default **pdfium** layout path (page-elements detection and OCR), not `method="nemotron_parse"`.
+    For chart and infographic detection and modality-specific retrieval, use the default PDFium-based layout path (page-elements detection and OCR), not `method="nemotron_parse"`.
 
 Chart-labeled PDF regions are **not** routed through the Omni caption stage; they remain on the layout-and-OCR path. For scope and validation guidance, refer to [Image captioning](#image-captioning).
 
@@ -124,7 +124,7 @@ For natural-language infographic descriptions, optionally enable [image captioni
 
 ## OCR and scanned documents { #ocr-and-scanned-documents }
 
-Scanned PDFs and image-only pages rely on OCR and hybrid paths that combine native text extraction with OCR when needed. For extract methods such as `ocr` and `pdfium_hybrid`, refer to the [Python API reference](nemo-retriever-api-reference.md).
+Scanned PDFs and image-only pages rely on OCR and hybrid paths that combine native text extraction with OCR when needed. In both the Python API and `retriever ingest`, the default `pdfium_hybrid` method uses OCR for pages that it detects as scanned. For extract methods such as `ocr` and `pdfium_hybrid`, refer to the [Python API reference](nemo-retriever-api-reference.md).
 
 When you run extraction locally with Hugging Face weights, the default OCR engine is **Nemotron OCR v2**, which operates in **multilingual** mode by default. For CLI flags and API parameters, refer to [CLI — OCR language mode](https://github.com/NVIDIA/NeMo-Retriever/blob/26.08.1/nemo_retriever/docs/cli/README.md#ocr-language-mode). For Kubernetes image pins and overrides, refer to [OCR NIM configuration](https://github.com/NVIDIA/NeMo-Retriever/blob/26.08.1/nemo_retriever/helm/README.md#ocr-nim-configuration). For hosted OCR endpoints and the NVCF language-mode limitation, refer to [Default NVCF endpoints](prerequisites-support-matrix.md#default-nvcf-endpoints).
 
