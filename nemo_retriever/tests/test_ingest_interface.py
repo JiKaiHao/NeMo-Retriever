@@ -563,6 +563,48 @@ def test_directory_expansion_skips_stat_for_files_and_globs(monkeypatch: pytest.
     assert expand_input_directories(["a.pdf", "docs/**/*.pdf"]) == ["a.pdf", "docs/**/*.pdf"]
 
 
+def test_explicit_media_methods_use_auto_routed_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from nemo_retriever.ingestor.manifest import (
+        build_input_manifest,
+        plan_extraction_branches,
+        resolve_branch_extraction_inputs,
+    )
+
+    monkeypatch.setenv("AUDIO_GRPC_ENDPOINT", "localhost:50051")
+    (tmp_path / "a.mp3").write_bytes(b"")
+    (tmp_path / "b.mp4").write_bytes(b"")
+    unset = dict.fromkeys(
+        (
+            "extract_params",
+            "text_params",
+            "html_params",
+            "audio_chunk_params",
+            "asr_params",
+            "video_frame_params",
+            "video_text_dedup_params",
+            "av_fuse_params",
+        )
+    )
+    routed = {
+        branch.family: resolve_branch_extraction_inputs(branch, **unset)
+        for branch in plan_extraction_branches(build_input_manifest([str(tmp_path / "a.mp3"), str(tmp_path / "b.mp4")]))
+    }
+
+    audio = GraphIngestor().extract_audio()
+    video = GraphIngestor().extract_video()
+
+    assert audio._audio_chunk_params == routed["audio"].audio_chunk_params
+    assert audio._asr_params == routed["audio"].asr_params
+    assert audio._asr_params.audio_endpoints[0] == "localhost:50051"
+    assert video._audio_chunk_params == routed["video"].audio_chunk_params
+    assert video._asr_params == routed["video"].asr_params
+    assert video._video_frame_params == routed["video"].video_frame_params
+    # Only size splits take the CLI interval; other split types keep the model default.
+    assert GraphIngestor().extract_audio(split_type="time")._audio_chunk_params.split_interval == (
+        AudioChunkParams().split_interval
+    )
+
+
 def test_extract_unified_defaults() -> None:
     """`.extract()` defaults: infer extraction_mode at graph-build time and no chunking unless opted in."""
     ingestor = GraphIngestor(run_mode="inprocess").extract()
