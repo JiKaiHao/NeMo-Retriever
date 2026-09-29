@@ -125,14 +125,18 @@ def resolve_lancedb_upload_kwargs(vdb_kwargs: Mapping[str, Any]) -> dict[str, An
 
 
 def _embedding_model_kwargs(embed_params: Any) -> dict[str, Any]:
-    """Record the embed stage's model on the table, as ``retriever ingest`` does."""
+    """Describe the embed stage's vectors on the table, as ``retriever ingest`` does."""
+    kwargs: dict[str, Any] = {}
+    if embed_params.embed_model_name or embed_params.model_name or embed_params.dimensions:
+        # Infer the width instead of assuming the default model's 2048-d vectors.
+        kwargs["vector_dim"] = None
     remote = str(embed_params.embed_invoke_url or embed_params.embedding_endpoint or "").strip()
     if not remote and embed_params.embed_model_name not in (None, embed_params.model_name):
         # A local actor would use embed_model_name, a CPU-only fallback model_name; don't guess.
-        return {}
+        return kwargs
     # Remote and CPU-fallback actors embed with model_name, and a local actor agrees here.
     model_name = resolve_embed_model(embed_params.model_name)
-    kwargs: dict[str, Any] = {"embedding_model_name": model_name}
+    kwargs["embedding_model_name"] = model_name
     if model_name != NEMOTRON_3_EMBED_MODEL and not remote:
         revision = resolve_embed_model_revision(model_name, embed_params.embed_model_revision)
         if revision:

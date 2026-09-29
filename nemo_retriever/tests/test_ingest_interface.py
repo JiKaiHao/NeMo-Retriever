@@ -482,33 +482,44 @@ def test_lancedb_sink_resolves_auto_index_mode_when_graph_is_built(tmp_path: Pat
 
 
 @pytest.mark.parametrize(
-    ("embed_params", "vdb_kwargs", "expected_model", "expected_revision"),
+    ("embed_params", "vdb_kwargs", "expected_model", "expected_revision", "expected_dim"),
     [
-        (EmbedParams(), {}, "nvidia/nemotron-3-embed-1b", None),
+        (EmbedParams(), {}, "nvidia/nemotron-3-embed-1b", None, 2048),
         (
             EmbedParams(model_name="nvidia/llama-nemotron-embed-1b-v2", embed_model_revision="abc123"),
             {},
             "nvidia/llama-nemotron-embed-1b-v2",
             "abc123",
+            None,
         ),
         (
             EmbedParams(model_name="nvidia/llama-nemotron-embed-1b-v2", embed_invoke_url="http://embed:8000/v1"),
             {},
             "nvidia/llama-nemotron-embed-1b-v2",
             None,
+            None,
         ),
-        (EmbedParams(), {"embedding_model_name": "custom/model"}, "custom/model", None),
-        (None, {}, None, None),
-        (EmbedParams(), {"sparse": True}, None, None),
+        (EmbedParams(dimensions=512), {}, "nvidia/nemotron-3-embed-1b", None, None),
+        (
+            EmbedParams(model_name="nvidia/llama-nemotron-embed-1b-v2", embed_model_revision="abc123"),
+            {"vector_dim": 1024},
+            "nvidia/llama-nemotron-embed-1b-v2",
+            "abc123",
+            1024,
+        ),
+        (EmbedParams(), {"embedding_model_name": "custom/model"}, "custom/model", None, 2048),
+        (None, {}, None, None, 2048),
+        (EmbedParams(), {"sparse": True}, None, None, 2048),
     ],
 )
 def test_lancedb_sink_records_embed_stage_model(
-    tmp_path: Path, embed_params, vdb_kwargs, expected_model, expected_revision
+    tmp_path: Path, embed_params, vdb_kwargs, expected_model, expected_revision, expected_dim
 ) -> None:
     vdb = _lancedb_sink(VdbUploadParams(vdb_kwargs={"uri": str(tmp_path), **vdb_kwargs}), embed_params)
 
     assert vdb.embedding_model_name == expected_model
     assert vdb.embedding_model_revision == expected_revision
+    assert vdb.vector_dim == expected_dim
 
 
 @pytest.mark.parametrize(
