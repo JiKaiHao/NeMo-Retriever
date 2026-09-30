@@ -35,6 +35,8 @@ It does not store the embeddings for images.
 
     To persist extracted images, tables, and chart renderings to disk or object storage, use the `store` task in addition to `vdb_upload`. The `store` task supports any fsspec-compatible backend (local filesystem, S3, GCS, and other object stores). For details, refer to [Store Extracted Images](nemo-retriever-api-reference.md).
 
+    `.store()` names each stored image from its source, page, content type, and chunk, then appends a content hash before the file extension. This keeps filenames recognizable and uses the hash suffix to distinguish content and reduce filename collisions.
+
 NeMo Retriever Library supports uploading data through `.vdb_upload()` on `create_ingestor(...)` ([Python API guide](nemo-retriever-api-reference.md)) and through the public `retriever ingest` CLI.
 
 - **Python SDK ingest** (`.vdb_upload()` on `create_ingestor(...)`) persists embeddings to LanceDB with default URI `lancedb` and default table `nemo-retriever`. Default `Retriever()` queries that same table.
