@@ -61,13 +61,8 @@ def _decode_image_b64(value: Any) -> bytes | None:
 
 
 def _filename_token(value: Any, *, fallback: str) -> str:
-    if value is None:
+    if value is None or not pd.api.types.is_scalar(value) or pd.isna(value):
         return fallback
-    try:
-        if pd.isna(value):
-            return fallback
-    except (TypeError, ValueError):
-        pass
 
     token = re.sub(r"[^A-Za-z0-9._-]+", "_", str(value)).strip("._-")
     return token[:48] or fallback
@@ -103,8 +98,8 @@ def _build_object_key(
     source = _source_stem(source_path)
     page = _filename_token(page_number, fallback="unknown")
     kind = _filename_token(content_type, fallback="image")
-    chunk = _filename_token(chunk_number, fallback="1")
-    return f"{source}-p{page}-{kind}-c{chunk}-{image_hash}.{extension}"
+    position = f"-c{_filename_token(chunk_number, fallback='1')}" if chunk_number is not None else ""
+    return f"{source}-p{page}-{kind}{position}-{image_hash}.{extension}"
 
 
 def _join_storage_uri(storage_uri: str, object_key: str) -> str:
@@ -348,7 +343,6 @@ def _store_row_images(
     fallback_format = _normalize_image_format(image_format)
     fsspec_options = dict(storage_options or {})
 
-    chunk_counts: dict[tuple[str, str, str], int] = {}
     for idx, row in out.iterrows():
         image_b64, image_source = _row_image_b64_with_source(row)
         stored_uri = row.get("_stored_image_uri")
@@ -360,12 +354,6 @@ def _store_row_images(
             content_type = row.get("_content_type")
             if not isinstance(content_type, str) or not content_type.strip():
                 content_type = image_source
-            chunk_key = (
-                _source_stem(source_path),
-                _filename_token(page_number, fallback="unknown"),
-                _filename_token(content_type, fallback="image"),
-            )
-            chunk_counts[chunk_key] = chunk_counts.get(chunk_key, 0) + 1
             stored_uri = _write_image_b64(
                 image_b64,
                 storage_uri=storage_uri,
@@ -374,7 +362,6 @@ def _store_row_images(
                 source_path=source_path,
                 page_number=page_number,
                 content_type=content_type,
-                chunk_number=chunk_counts[chunk_key],
             )
             if stored_uri is not None:
                 out.at[idx, "_stored_image_uri"] = stored_uri

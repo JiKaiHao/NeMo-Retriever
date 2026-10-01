@@ -489,8 +489,27 @@ class TestStoreOperatorInGraph:
         assert result.iloc[0]["_content_type"] == "text/page"
         assert calls
         assert calls[0] == (
-            f"memory://stored/report_with_spaces-p0-text_page-c1-{hashlib.sha1(raw).hexdigest()}.png"
+            f"memory://stored/report_with_spaces-p0-text_page-{hashlib.sha1(raw).hexdigest()}.png"
         )
+
+    def test_row_image_uris_are_independent_of_batch_order(self, tmp_path: Path):
+        first = _make_tiny_png_b64()
+        second = base64.b64encode(b"different image bytes").decode()
+        rows = pd.DataFrame(
+            {
+                "path": ["report.pdf", "report.pdf"],
+                "page_number": [1, 1],
+                "_content_type": ["image", "image"],
+                "_image_b64": [first, second],
+            }
+        )
+        params = StoreParams(storage_uri=str(tmp_path))
+
+        original = StoreOperator(params=params).process(rows)
+        reversed_rows = StoreOperator(params=params).process(rows.iloc[::-1].reset_index(drop=True))
+
+        assert original["_stored_image_uri"].tolist() == reversed_rows["_stored_image_uri"].tolist()[::-1]
+        assert len(list(tmp_path.iterdir())) == 2
 
     def test_embedding_preserves_image_b64_for_post_embed_store(self, monkeypatch):
         from nemo_retriever.models.inference import runtime
